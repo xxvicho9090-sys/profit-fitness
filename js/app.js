@@ -438,4 +438,23 @@ setInterval(() => { const el = $('#elapsed'); if (el && S.active) { const s = Ma
 
 fetch('data/exercises.json').then(r => r.json()).then(d => { EX = d; EXMAP = Object.fromEntries(d.map(e => [e.id, e])); render(); }).catch(() => { $('#view').innerHTML = '<p class="c bad">No se pudo cargar la base de ejercicios.</p>'; });
 render();
-if ('serviceWorker' in navigator) addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => { }));
+/* ---------- Actualización automática ---------- */
+// Cada archivo de la app se consulta sin caché; si cambia su ETag/fecha en el servidor, se recarga sola.
+const WATCH = ['index.html', 'js/app.js', 'js/calc.js', 'css/style.css', 'data/exercises.json', 'sw.js'];
+async function stamp() {
+  try { return (await Promise.all(WATCH.map(async f => { const r = await fetch(f, { method: 'HEAD', cache: 'no-store' }); return r.headers.get('etag') || r.headers.get('last-modified') || r.headers.get('content-length'); }))).join('|'); } catch (e) { return null; }
+}
+let baseStamp = null, reloading = false;
+async function checkUpdate() {
+  if (reloading || !navigator.onLine) return;
+  const s = await stamp(); if (!s) return;
+  if (baseStamp === null) { baseStamp = s; return; }
+  if (s !== baseStamp) {
+    reloading = true; toast('⬆ Actualizando ProFit…'); // el entrenamiento en curso ya está guardado en el dispositivo
+    try { const r = await navigator.serviceWorker?.getRegistration(); await r?.update(); const ks = await caches.keys(); await Promise.all(ks.filter(k => !k.endsWith('-img')).map(k => caches.delete(k))); } catch (e) { }
+    setTimeout(() => location.reload(), 600);
+  }
+}
+if ('serviceWorker' in navigator) addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => { }); checkUpdate(); setInterval(checkUpdate, 10 * 60 * 1000); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkUpdate(); });
+addEventListener('online', checkUpdate);
