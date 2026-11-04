@@ -5,7 +5,7 @@ body{padding-top:calc(52px + env(safe-area-inset-top));padding-bottom:calc(66px 
 header{position:fixed;top:0;left:0;right:0;z-index:20;height:calc(52px + env(safe-area-inset-top));padding:env(safe-area-inset-top) 14px 0;background:var(--bg);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}
 header h1{font-size:19px;margin:0;letter-spacing:.3px}
 main{max-width:760px;margin:0 auto;padding:14px}
-nav#tabs{position:fixed;bottom:0;left:0;right:0;z-index:20;display:flex;background:#0e141bf2;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom);backdrop-filter:blur(8px)}
+nav#tabs{position:fixed;bottom:0;left:0;right:0;z-index:20;display:flex;background:#0e141b;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
 nav a{flex:1;text-align:center;color:var(--mut);text-decoration:none;font-size:11px;padding:7px 0 6px}
 nav a i{display:block;font-style:normal;font-size:20px;line-height:1.2}
 nav a.on{color:var(--acc)}
@@ -50,3 +50,7 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:6px 4px;b
 ol{padding-left:20px;margin:6px 0}li{margin-bottom:5px}
 .res{background:var(--card2);border-radius:12px;padding:12px;margin-top:8px}.res b{color:var(--acc2)}
 details summary{cursor:pointer;font-weight:600;padding:4px 0}
+
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+html{color-scheme:dark}
+button:active{transform:none}

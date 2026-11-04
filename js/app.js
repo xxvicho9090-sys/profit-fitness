@@ -77,18 +77,27 @@ function lineChart(canvas, pts, unit) {
   g.fillStyle = '#8a9bb0'; g.fillText(fdate(pts[0].d), 34, h - 4); const lt = fdate(pts[pts.length - 1].d); g.fillText(lt, w - 6 - g.measureText(lt).width, h - 4);
 }
 
-/* ---------- Temporizador de descanso ---------- */
-const rest = { end: 0, iv: null };
-function startRest(sec) {
-  rest.end = Date.now() + sec * 1000; clearInterval(rest.iv);
-  const tick = () => {
-    const left = Math.ceil((rest.end - Date.now()) / 1000), el = $('#timer');
-    if (left <= 0) { clearInterval(rest.iv); rest.end = 0; el.textContent = '¡Descanso terminado!'; navigator.vibrate?.([200, 100, 200]); setTimeout(() => { if (!rest.end) el.hidden = true; }, 2500); return; }
-    el.hidden = false; el.textContent = `⏱ ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}  (toca para saltar)`;
-  };
-  tick(); rest.iv = setInterval(tick, 500);
+/* ---------- Temporizador de descanso y reloj (bajo consumo) ---------- */
+// Un solo intervalo de 1 s que SOLO corre con la app visible y cuando hay algo que actualizar.
+// El fin del descanso usa un setTimeout (un único despertar), no un intervalo.
+const rest = { end: 0, to: null };
+let beatIv = null;
+function beat() {
+  const el = $('#elapsed');
+  if (el && S.active) { const s = Math.floor((Date.now() - S.active.start) / 1000); el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; }
+  if (rest.end) { const left = Math.ceil((rest.end - Date.now()) / 1000), t = $('#timer'); if (left > 0) { t.hidden = false; t.textContent = `⏱ ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}  (toca para saltar)`; } }
+  if (!$('#elapsed') && !rest.end) stopBeat();
 }
-$('#timer').onclick = () => { clearInterval(rest.iv); rest.end = 0; $('#timer').hidden = true; };
+function stopBeat() { clearInterval(beatIv); beatIv = null; }
+function ensureBeat() { if (!beatIv && document.visibilityState === 'visible' && ($('#elapsed') || rest.end)) beatIv = setInterval(beat, 1000); }
+function cancelRest() { clearTimeout(rest.to); rest.end = 0; $('#timer').hidden = true; }
+function startRest(sec) {
+  clearTimeout(rest.to); rest.end = Date.now() + sec * 1000;
+  rest.to = setTimeout(() => { rest.end = 0; const t = $('#timer'); t.hidden = false; t.textContent = '¡Descanso terminado!'; navigator.vibrate?.([200, 100, 200]); setTimeout(() => { if (!rest.end) t.hidden = true; }, 2500); }, sec * 1000);
+  beat(); ensureBeat();
+}
+$('#timer').onclick = cancelRest;
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { beat(); ensureBeat(); } else stopBeat(); });
 
 /* ---------- Generador de rutinas ---------- */
 const SLOTS = {
@@ -181,7 +190,7 @@ function finishWorkout() {
   w.ex.forEach(e => { const b = bestBefore(e.id), m = Math.max(...e.sets.map(e1rm)); if (m > b && b > 0) prs.push([e.id, m]); });
   const kg = latest('weight') || 70;
   w.kcal = Math.round(Calc.kcal(5, kg, w.dur));
-  S.workouts.push(w); S.active = null; save(); clearInterval(rest.iv); rest.end = 0; $('#timer').hidden = true;
+  S.workouts.push(w); S.active = null; save(); cancelRest();
   modal(`<h2>🎉 ¡Entrenamiento completo!</h2>
   <div class="grid3"><div class="stat"><b>${w.dur} min</b><span>Duración</span></div><div class="stat"><b>${Math.round(wVolume(w))} kg</b><span>Volumen</span></div><div class="stat"><b>${wSets(w)}</b><span>Series</span></div></div>
   <p class="mut sm">Gasto estimado: ~${w.kcal} kcal</p>
@@ -416,7 +425,7 @@ document.addEventListener('input', e => {
   const t = e.target;
   if (t.dataset.set) { const [ei, si, k] = t.dataset.set.split('.'); S.active.ex[+ei].sets[+si][k] = t.value; save(); }
   else if (t.id === 'wname') { S.active.name = t.value; save(); }
-  else if (t.id === 'exq') { exFilter.q = t.value.toLowerCase(); exFilter.n = 50; const pos = t.selectionStart; render(); const n = $('#exq'); n.focus(); n.setSelectionRange(pos, pos); }
+  else if (t.id === 'exq') { exFilter.q = t.value.toLowerCase(); exFilter.n = 50; clearTimeout(t._d); t._d = setTimeout(() => { const pos = t.selectionStart; render(); const n = $('#exq'); n.focus(); n.setSelectionRange(pos, pos); }, 180); }
 });
 document.addEventListener('change', e => { const t = e.target; if (t.dataset.ef) { exFilter[t.dataset.ef] = t.value; exFilter.n = 50; render(); } });
 $('#topactions').innerHTML = `<button class="ghost sm" data-act="profile">👤 Perfil</button>`;
@@ -430,11 +439,10 @@ function render() {
   document.querySelectorAll('details').forEach(d => { if (open.includes(d.dataset.tool || d.firstElementChild?.textContent)) d.open = true; });
   $('#title').textContent = TITLES[v];
   document.querySelectorAll('#tabs a').forEach(a => a.classList.toggle('on', a.getAttribute('href') === '#/' + v));
-  views[v].after?.();
+  views[v].after?.(); ensureBeat();
 }
 addEventListener('hashchange', () => { window.scrollTo(0, 0); render(); });
 addEventListener('resize', () => views.body.after?.());
-setInterval(() => { const el = $('#elapsed'); if (el && S.active) { const s = Math.floor((Date.now() - S.active.start) / 1000); el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; } }, 1000);
 
 fetch('data/exercises.json').then(r => r.json()).then(d => { EX = d; EXMAP = Object.fromEntries(d.map(e => [e.id, e])); render(); }).catch(() => { $('#view').innerHTML = '<p class="c bad">No se pudo cargar la base de ejercicios.</p>'; });
 render();
@@ -445,8 +453,10 @@ async function stamp() {
   try { return (await Promise.all(WATCH.map(async f => { const r = await fetch(f, { method: 'HEAD', cache: 'no-store' }); return r.headers.get('etag') || r.headers.get('last-modified') || r.headers.get('content-length'); }))).join('|'); } catch (e) { return null; }
 }
 let baseStamp = null, reloading = false;
+let lastCheck = 0;
 async function checkUpdate() {
-  if (reloading || !navigator.onLine) return;
+  if (reloading || !navigator.onLine || document.visibilityState !== 'visible' || Date.now() - lastCheck < 5 * 60 * 1000) return;
+  lastCheck = Date.now();
   const s = await stamp(); if (!s) return;
   if (baseStamp === null) { baseStamp = s; return; }
   if (s !== baseStamp) {
@@ -455,6 +465,6 @@ async function checkUpdate() {
     setTimeout(() => location.reload(), 600);
   }
 }
-if ('serviceWorker' in navigator) addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => { }); checkUpdate(); setInterval(checkUpdate, 10 * 60 * 1000); });
+if ('serviceWorker' in navigator) addEventListener('load', () => { navigator.serviceWorker.register('sw.js').catch(() => { }); checkUpdate(); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkUpdate(); });
 addEventListener('online', checkUpdate);
